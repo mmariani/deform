@@ -13,7 +13,6 @@
 ##############################################################################
 
 import os
-import sys
 
 from setuptools import setup
 from setuptools import find_packages
@@ -21,8 +20,10 @@ from setuptools import find_packages
 here = os.path.abspath(os.path.dirname(__file__))
 
 try:
-    README = open(os.path.join(here, 'README.txt')).read()
-    CHANGES = open(os.path.join(here, 'CHANGES.txt')).read()
+    with open(os.path.join(here, 'README.txt')) as f:
+        README = f.read()
+    with open(os.path.join(here, 'CHANGES.txt')) as f:
+        CHANGES = f.read()
 except:
     README = ''
     CHANGES = ''
@@ -34,40 +35,51 @@ requires = [
     'translationstring',
     ]
 
-if sys.version_info <(2,6,0):
-    requires.append('simplejson')
+testing_extras = ['nose', 'coverage', 'beautifulsoup4']
+docs_extras = ['Sphinx']
 
 setupkw = dict(
     name='deform',
-    version='0.9.3',
+    version='0.9.5',
     description='Another form generation library',
     long_description=README + '\n\n' + CHANGES,
     classifiers=[
         "Intended Audience :: Developers",
         "Programming Language :: Python",
+        "Programming Language :: Python :: 2.6",
+        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.2",
+        "Programming Language :: Python :: Implementation :: CPython",
+        "Programming Language :: Python :: Implementation :: PyPy",
         ],
     keywords='web forms form generation schema validation',
     author="Chris McDonough, Agendaless Consulting",
     author_email="pylons-discuss@googlegroups.com",
-    url="http://pylonsproject.org",
+    url="http://docs.pylonsproject.org/projects/deform/en/latest/",
     license="BSD-derived (http://www.repoze.org/LICENSE.txt)",
     packages=find_packages(),
     include_package_data=True,
     zip_safe=False,
-    tests_require=requires + ['BeautifulSoup'],
+    tests_require=requires + ['beautifulsoup4'],
     install_requires=requires,
     test_suite="deform",
+      extras_require = {
+          'testing':testing_extras,
+          'docs':docs_extras,
+          },
     )
 
+# to update catalogs, use babel and lingua !
 try:
     import babel
     babel = babel # PyFlakes
     # if babel is installed, advertise message extractors (if we pass
     # this to setup() unconditionally, and babel isn't installed,
     # distutils warns pointlessly)
-    setupkw['message_extractors'] = { ".": [
-        ("deform/**.py",     "chameleon_python", None ),
-        ("deform/**.pt",     "chameleon_xml", None ),
+    setupkw['message_extractors'] = { "deform": [
+        ("**.py",     "lingua_python", None ),
+        ("**.pt", "lingua_xml", None ),
         ]}
 except ImportError:
     pass

@@ -1,19 +1,31 @@
+# -*- coding: utf-8 -*-
+
 import csv
 import random
-import string
-import StringIO
-import urllib
+import json
 
 from colander import Invalid
 from colander import null
 
+from translationstring import TranslationString
+
 from deform.i18n import _
 
-try:
-    import json 
-except ImportError: # PRAGMA: no cover
-    import simplejson as json 
+from deform.compat import (
+    string_types,
+    StringIO,
+    string,
+    url_quote,
+    uppercase,
+    )
 
+def _normalize_choices(values):
+    result = []
+    for value, description in values:
+        if not isinstance(value, string_types):
+            value = str(value)
+        result.append((value, description))
+    return result
 
 class Widget(object):
     """
@@ -62,7 +74,7 @@ class Widget(object):
         The name of the CSS class attached to various tags in the form
         renderering indicating an error condition for the field
         associated with this widget.  Default: ``error``.
-    
+
     css_class
         The name of the CSS class attached to various tags in
         the form renderering specifying a new class for the field
@@ -226,6 +238,100 @@ class TextInputWidget(Widget):
             return null
         return pstruct
 
+class MoneyInputWidget(Widget):
+    """
+    Renders an ``<input type="text"/>`` widget with Javascript which enforces
+    a valid currency input.  It should be used along with the
+    ``colander.Decimal`` schema type (at least if you care about your money).
+    This widget depends on the ``jquery-maskMoney`` JQuery plugin.
+
+    **Attributes/Arguments**
+
+    size
+        The size, in columns, of the text input field.  Defaults to
+        ``None``, meaning that the ``size`` is not included in the
+        widget output (uses browser default size).
+
+    template
+       The template name used to render the widget.  Default:
+        ``moneyinput``.
+
+    readonly_template
+        The template name used to render the widget in read-only mode.
+        Default: ``readonly/textinput``.
+
+    options
+        A dictionary or sequence of two-tuples containing ``jquery-maskMoney``
+        options.  The valid options are:
+
+        symbol
+            the symbol to be used before of the user values. default: ``$``
+        
+        showSymbol
+            set if the symbol must be displayed or not. default: ``False``
+            
+        symbolStay
+            set if the symbol will stay in the field after the user exists the
+            field. default: ``False``
+            
+        thousands
+            the thousands separator. default: ``,``
+            
+        decimal
+            the decimal separator. default: ``.``
+            
+        precision
+            how many decimal places are allowed. default: 2
+
+        defaultZero
+            when the user enters the field, it sets a default mask using zero.
+            default: ``True``
+            
+        allowZero
+            use this setting to prevent users from inputing zero. default:
+            ``False``
+            
+        allowNegative
+            use this setting to prevent users from inputing negative values.
+            default: ``False``
+    """
+    template = 'moneyinput'
+    readonly_template = 'readonly/textinput'
+    requirements = ( ('jquery.maskMoney', None), )
+    options = None
+    size = None
+    
+    def serialize(self, field, cstruct, readonly=False):
+        if cstruct in (null, None):
+            cstruct = ''
+        template = readonly and self.readonly_template or self.template
+        options = self.options
+        if options is None:
+            options = {}
+        options = json.dumps(dict(options))
+        return field.renderer(template, mask_options=options, field=field,
+                              cstruct=cstruct)
+    
+    def deserialize(self, field, pstruct):
+        if pstruct is null:
+            return null
+        pstruct = pstruct.strip()
+        thousands = ','
+        # Oh jquery-maskMoney, you submit the thousands separator in the
+        # control value.  I'm no genius, but IMO that's not very smart.  But
+        # then again you also don't inject the thousands separator into the
+        # value attached to the control when editing an existing value.
+        # Because it's obvious we should have *both* the server and the
+        # client doing this bullshit on both serialization and
+        # deserialization.  I understand completely, you're just a client
+        # library, IT'S NO PROBLEM.  LET ME HELP YOU.
+        if self.options:
+            thousands = dict(self.options).get('thousands', ',')
+        pstruct = pstruct.replace(thousands, '')
+        if not pstruct:
+            return null
+        return pstruct
+
 class AutocompleteInputWidget(Widget):
     """
     Renders an ``<input type="text"/>`` widget which provides
@@ -304,7 +410,7 @@ class AutocompleteInputWidget(Widget):
         if not self.delay:
             # set default delay if None
             options['delay'] = (isinstance(self.values,
-                                          basestring) and 400) or 10
+                                          string_types) and 400) or 10
         options['minLength'] = self.min_length
         options = json.dumps(options)
         values = json.dumps(self.values)
@@ -327,7 +433,7 @@ class AutocompleteInputWidget(Widget):
 
 class DateInputWidget(Widget):
     """
-    
+
     Renders a JQuery UI date picker widget
     (http://jqueryui.com/demos/datepicker/).  Most useful when the
     schema node is a ``colander.Date`` object.
@@ -343,6 +449,9 @@ class DateInputWidget(Widget):
         The template name used to render the widget.  Default:
         ``dateinput``.
 
+    options
+        Options for configuring the widget (eg: date format)
+
     readonly_template
         The template name used to render the widget in read-only mode.
         Default: ``readonly/textinput``.
@@ -351,12 +460,21 @@ class DateInputWidget(Widget):
     readonly_template = 'readonly/textinput'
     size = None
     requirements = ( ('jqueryui', None), )
+    default_options = (('dateFormat', 'yy-mm-dd'),)
+
+
+    def __init__(self, *args, **kwargs):
+        self.options = dict(self.default_options)
+        Widget.__init__(self, *args, **kwargs)
 
     def serialize(self, field, cstruct, readonly=False):
         if cstruct in (null, None):
             cstruct = ''
         template = readonly and self.readonly_template or self.template
-        return field.renderer(template, field=field, cstruct=cstruct)
+        return field.renderer(template,
+                              field=field,
+                              cstruct=cstruct,
+                              options=self.options)
 
     def deserialize(self, field, pstruct):
         if pstruct in ('', null):
@@ -391,36 +509,28 @@ class DateTimeInputWidget(DateInputWidget):
     readonly_template = 'readonly/textinput'
     size = None
     requirements = ( ('jqueryui', None), ('datetimepicker', None), )
-    option_defaults = {'dateFormat': 'yy-mm-dd',
-                       'timeFormat': 'hh:mm:ss',
-                       'separator': ' '}
-    options = {}
-
-    def _options(self):
-        options = self.option_defaults.copy()
-        options.update(self.options)
-        return options
+    default_options = (DateInputWidget.default_options +
+                       (('timeFormat', 'hh:mm:ss'),
+                        ('separator', ' ')))
 
     def serialize(self, field, cstruct, readonly=False):
         if cstruct in (null, None):
             cstruct = ''
         template = readonly and self.readonly_template or self.template
-        options = self._options()
         if len(cstruct) == 25: # strip timezone if it's there
             cstruct = cstruct[:-6]
-        cstruct = options['separator'].join(cstruct.split('T'))
+        cstruct = self.options['separator'].join(cstruct.split('T'))
         return field.renderer(
             template,
             field=field,
             cstruct=cstruct,
-            options=json.dumps(self._options()),
+            options=json.dumps(self.options),
             )
 
     def deserialize(self, field, pstruct):
         if pstruct in ('', null):
             return null
-        options = self._options()
-        return pstruct.replace(options['separator'], 'T')
+        return pstruct.replace(self.options['separator'], 'T')
 
 class TextAreaWidget(TextInputWidget):
     """
@@ -465,7 +575,7 @@ class RichTextWidget(TextInputWidget):
     To use this widget the :term:`TinyMCE Editor` library must be
     provided in the page where the widget is rendered. A version of
     :term:`TinyMCE Editor` is included in deform's static directory.
-    
+
 
     **Attributes/Arguments**
 
@@ -476,6 +586,11 @@ class RichTextWidget(TextInputWidget):
         The template name used to render the widget in read-only mode.
         Default: ``readonly/richtext``.
 
+    delayed_load
+        If you have many richtext fields, you can set this option to
+        ``true``, and the richtext editor will only be loaded when
+        clicking on the field (default ``false``)
+
     strip
         If true, during deserialization, strip the value of leading
         and trailing whitespace (default ``True``).
@@ -483,6 +598,11 @@ class RichTextWidget(TextInputWidget):
     template
         The template name used to render the widget.  Default:
         ``richtext``.
+
+    skin
+        The skin for the WYSIWYG editor. Normally only needed if you
+        plan to reuse a TinyMCE js from another framework that
+        defined a skin.
 
     theme
         The theme for the WYSIWYG editor, ``simple`` or ``advanced``.
@@ -495,9 +615,11 @@ class RichTextWidget(TextInputWidget):
     """
     height = 240
     width = 500
-    readonly_template = 'readonly/richtextarea'
+    readonly_template = 'readonly/richtext'
+    delayed_load = False
     strip = True
     template = 'richtext'
+    skin = 'default'
     theme = 'simple'
     requirements = ( ('tinymce', None), )
 
@@ -594,11 +716,12 @@ class SelectWidget(Widget):
     **Attributes/Arguments**
 
     values
-        A sequence of two-tuples (both values must be **string** or
-        **unicode** values) indicating allowable, displayed values,
-        e.g. ``( ('true', 'True'), ('false', 'False') )``.  The first
-        element in the tuple is the value that should be returned when
-        the form is posted.  The second is the display value.
+        A sequence of two-tuples (the first value must be of type
+        string, unicode or integer, the second value must be string or
+        unicode) indicating allowable, displayed values, e.g. ``(
+        ('true', 'True'), ('false', 'False') )``.  The first element
+        in the tuple is the value that should be returned when the
+        form is posted.  The second is the display value.
 
     size
         The ``size`` attribute of the select input field (default:
@@ -618,18 +741,22 @@ class SelectWidget(Widget):
         The template name used to render the widget in read-only mode.
         Default: ``readonly/select``.
 
+    multiple
+        Enable multiple on the select widget ( default: ``False`` )
     """
     template = 'select'
     readonly_template = 'readonly/select'
     null_value = ''
     values = ()
     size = None
+    multiple = False
 
     def serialize(self, field, cstruct, readonly=False):
         if cstruct in (null, None):
             cstruct = self.null_value
         template = readonly and self.readonly_template or self.template
-        return field.renderer(template, field=field, cstruct=cstruct)
+        return field.renderer(template, field=field, cstruct=cstruct,
+                              values=_normalize_choices(self.values))
 
     def deserialize(self, field, pstruct):
         if pstruct in (null, self.null_value):
@@ -644,11 +771,12 @@ class RadioChoiceWidget(SelectWidget):
     **Attributes/Arguments**
 
     values
-        A sequence of two-tuples (both values must be **string** or
-        **unicode** values) indicating allowable, displayed values,
-        e.g. ``( ('true', 'True'), ('false', 'False') )``.  The first
-        element in the tuple is the value that should be returned when
-        the form is posted.  The second is the display value.
+        A sequence of two-tuples (the first value must be of type
+        string, unicode or integer, the second value must be string or
+        unicode) indicating allowable, displayed values, e.g. ``(
+        ('true', 'True'), ('false', 'False') )``.  The first element
+        in the tuple is the value that should be returned when the
+        form is posted.  The second is the display value.
 
     template
         The template name used to render the widget.  Default:
@@ -674,11 +802,12 @@ class CheckboxChoiceWidget(Widget):
     **Attributes/Arguments**
 
     values
-        A sequence of two-tuples (both values must be **string** or
-        **unicode** values) indicating allowable, displayed values,
-        e.g. ``( ('true', 'True'), ('false', 'False') )``.  The first
-        element in the tuple is the value that should be returned when
-        the form is posted.  The second is the display value.
+        A sequence of two-tuples (the first value must be of type
+        string, unicode or integer, the second value must be string or
+        unicode) indicating allowable, displayed values, e.g. ``(
+        ('true', 'True'), ('false', 'False') )``.  The first element
+        in the tuple is the value that should be returned when the
+        form is posted.  The second is the display value.
 
     template
         The template name used to render the widget.  Default:
@@ -701,12 +830,13 @@ class CheckboxChoiceWidget(Widget):
         if cstruct in (null, None):
             cstruct = ()
         template = readonly and self.readonly_template or self.template
-        return field.renderer(template, field=field, cstruct=cstruct)
+        return field.renderer(template, field=field, cstruct=cstruct,
+                              values=_normalize_choices(self.values))
 
     def deserialize(self, field, pstruct):
         if pstruct is null:
             return null
-        if isinstance(pstruct, basestring):
+        if isinstance(pstruct, string_types):
             return (pstruct,)
         return tuple(pstruct)
 
@@ -773,7 +903,7 @@ class CheckedInputWidget(Widget):
     def serialize(self, field, cstruct, readonly=False):
         if cstruct in (null, None):
             cstruct = ''
-        confirm = getattr(field, 'confirm', '')
+        confirm = getattr(field, '%s-confirm' % (field.name,), cstruct)
         template = readonly and self.readonly_template or self.template
         return field.renderer(template, field=field, cstruct=cstruct,
                               confirm=confirm, subject=self.subject,
@@ -783,9 +913,9 @@ class CheckedInputWidget(Widget):
     def deserialize(self, field, pstruct):
         if pstruct is null:
             return null
-        value = pstruct.get('value') or ''
-        confirm = pstruct.get('confirm') or ''
-        field.confirm = confirm
+        value = pstruct.get(field.name) or ''
+        confirm = pstruct.get('%s-confirm' % (field.name,)) or ''
+        setattr(field, '%s-confirm' % (field.name,), confirm)
         if (value or confirm) and (value != confirm):
             raise Invalid(field.schema, self.mismatch_message, value)
         if not value:
@@ -856,7 +986,7 @@ class MappingWidget(Widget):
 
     def deserialize(self, field, pstruct):
         error = None
-        
+
         result = {}
 
         if pstruct is null:
@@ -865,10 +995,10 @@ class MappingWidget(Widget):
         for num, subfield in enumerate(field.children):
             name = subfield.name
             subval = pstruct.get(name, null)
-                            
+
             try:
                 result[name] = subfield.deserialize(subval)
-            except Invalid, e:
+            except Invalid as e:
                 result[name] = e.value
                 if error is None:
                     error = Invalid(field.schema, value=result)
@@ -976,9 +1106,9 @@ class SequenceWidget(Widget):
         item_field = field.children[0].clone()
         proto = field.renderer(self.item_template, field=item_field,
                                cstruct=null, parent=field)
-        if isinstance(proto, unicode):
+        if isinstance(proto, string_types):
             proto = proto.encode('utf-8')
-        proto = urllib.quote(proto)
+        proto = url_quote(proto)
         return proto
 
     def serialize(self, field, cstruct, readonly=False):
@@ -1004,7 +1134,7 @@ class SequenceWidget(Widget):
             # this serialization is being performed as a result of a
             # validation failure (``deserialize`` was previously run)
             assert(len(cstruct) == len(field.sequence_fields))
-            subfields = zip(cstruct, field.sequence_fields)
+            subfields = list(zip(cstruct, field.sequence_fields))
         else:
             # this serialization is being performed as a result of a
             # first-time rendering
@@ -1016,8 +1146,12 @@ class SequenceWidget(Widget):
             subitem_title=translate(item_field.title),
             subitem_description=translate(item_field.description),
             subitem_name=item_field.name)
-        add_subitem_text = _(self.add_subitem_text_template,
-                             mapping=add_template_mapping)
+        if isinstance(self.add_subitem_text_template, TranslationString):
+            add_subitem_text = self.add_subitem_text_template % \
+                add_template_mapping            
+        else:
+            add_subitem_text = _(self.add_subitem_text_template,
+                                 mapping=add_template_mapping)
         return field.renderer(template,
                               field=field,
                               cstruct=cstruct,
@@ -1039,7 +1173,7 @@ class SequenceWidget(Widget):
             subfield = item_field.clone()
             try:
                 subval = subfield.deserialize(substruct)
-            except Invalid, e:
+            except Invalid as e:
                 subval = e.value
                 if error is None:
                     error = Invalid(field.schema, value=result)
@@ -1105,7 +1239,7 @@ class FileUploadWidget(Widget):
 
     def random_id(self):
         return ''.join(
-            [random.choice(string.uppercase+string.digits) for i in range(10)])
+            [random.choice(uppercase+string.digits) for i in range(10)])
 
     def serialize(self, field, cstruct, readonly=False):
         if cstruct in (null, None):
@@ -1129,7 +1263,10 @@ class FileUploadWidget(Widget):
             # the upload control had a file selected
             data = filedict()
             data['fp'] = upload.file
-            data['filename'] = upload.filename
+            filename = upload.filename
+            # sanitize IE whole-path filenames
+            filename = filename[filename.rfind('\\')+1:].strip()
+            data['filename'] = filename
             data['mimetype'] = upload.type
             data['size']  = upload.length
             if uid is None:
@@ -1214,7 +1351,7 @@ class DatePartsWidget(Widget):
             year = pstruct['year'].strip()
             month = pstruct['month'].strip()
             day = pstruct['day'].strip()
-            
+
             if (not year and not month and not day):
                 return null
 
@@ -1232,7 +1369,7 @@ class TextAreaCSVWidget(Widget):
     Widget used for a sequence of tuples of scalars; allows for
     editing CSV within a text area.  Used with a schema node which is
     a sequence of tuples.
-    
+
     **Attributes/Arguments**
 
     cols
@@ -1263,7 +1400,7 @@ class TextAreaCSVWidget(Widget):
             cstruct = []
         textrows = getattr(field, 'unparseable', None)
         if textrows is None:
-            outfile = StringIO.StringIO()
+            outfile = StringIO()
             writer = csv.writer(outfile)
             writer.writerows(cstruct)
             textrows = outfile.getvalue()
@@ -1272,17 +1409,17 @@ class TextAreaCSVWidget(Widget):
         else:
             template = self.template
         return field.renderer(template, field=field, cstruct=textrows)
-        
+
     def deserialize(self, field, pstruct):
         if pstruct is null:
             return null
         if not pstruct.strip():
             return null
         try:
-            infile = StringIO.StringIO(pstruct)
+            infile = StringIO(pstruct)
             reader = csv.reader(infile)
             rows = list(reader)
-        except Exception, e:
+        except Exception as e:
             field.unparseable = pstruct
             raise Invalid(field.schema, str(e))
         return rows
@@ -1302,7 +1439,7 @@ class TextInputCSVWidget(Widget):
     Widget used for a tuple of scalars; allows for editing a single
     CSV line within a text input.  Used with a schema node which is a
     tuple composed entirely of scalar values (integers, strings, etc).
-    
+
     **Attributes/Arguments**
 
     template
@@ -1328,7 +1465,7 @@ class TextInputCSVWidget(Widget):
             cstruct = ''
         textrow = getattr(field, 'unparseable', None)
         if textrow is None:
-            outfile = StringIO.StringIO()
+            outfile = StringIO()
             writer = csv.writer(outfile)
             writer.writerow(cstruct)
             textrow = outfile.getvalue().strip()
@@ -1337,17 +1474,18 @@ class TextInputCSVWidget(Widget):
         else:
             template = self.template
         return field.renderer(template, field=field, cstruct=textrow)
-        
+
     def deserialize(self, field, pstruct):
         if pstruct is null:
             return null
         if not pstruct.strip():
             return null
         try:
-            infile = StringIO.StringIO(pstruct)
+            infile = StringIO(pstruct)
             reader = csv.reader(infile)
-            row = reader.next()
-        except Exception, e:
+            #row = reader.next()
+            row = next(reader)
+        except Exception as e:
             field.unparseable = pstruct
             raise Invalid(field.schema, str(e))
         return row
@@ -1421,50 +1559,56 @@ class ResourceRegistry(object):
                 sources = versioned.get(thing)
                 if sources is None:
                     continue
-                if not hasattr(sources, '__iter__'):
+                if isinstance(sources, string_types):
                     sources = (sources,)
                 for source in sources:
                     if not source in result[thing]:
                         result[thing].append(source)
         return result
 
-            
+
 default_resources = {
     'jquery': {
         None:{
-            'js':'scripts/jquery-1.4.2.min.js',
+            'js':'scripts/jquery-1.7.2.min.js',
             },
         },
     'jqueryui': {
         None:{
-            'js':('scripts/jquery-1.4.2.min.js',
+            'js':('scripts/jquery-1.7.2.min.js',
                   'scripts/jquery-ui-1.8.11.custom.min.js'),
             'css':'css/ui-lightness/jquery-ui-1.8.11.custom.css',
             },
         },
     'jquery.form': {
         None:{
-            'js':('scripts/jquery-1.4.2.min.js',
-                  'scripts/jquery.form.js'),
+            'js':('scripts/jquery-1.7.2.min.js',
+                  'scripts/jquery.form-3.09.js'),
             },
         },
     'jquery.maskedinput': {
         None:{
-            'js':('scripts/jquery-1.4.2.min.js',
+            'js':('scripts/jquery-1.7.2.min.js',
                   'scripts/jquery.maskedinput-1.2.2.min.js'),
+            },
+        },
+    'jquery.maskMoney': {
+        None:{
+            'js':('scripts/jquery-1.7.2.min.js',
+                  'scripts/jquery.maskMoney-1.4.1.js'),
             },
         },
     'datetimepicker': {
         None:{
-            'js':('scripts/jquery-1.4.2.min.js',
+            'js':('scripts/jquery-1.7.2.min.js',
                   'scripts/jquery-ui-timepicker-addon.js'),
             'css':'css/jquery-ui-timepicker-addon.css',
             },
         },
     'deform': {
         None:{
-            'js':('scripts/jquery-1.4.2.min.js',
-                  'scripts/jquery.form.js',
+            'js':('scripts/jquery-1.7.2.min.js',
+                  'scripts/jquery.form-3.09.js',
                   'scripts/deform.js'),
             'css':('css/form.css')
 

@@ -1,4 +1,8 @@
 import unittest
+from deform.compat import (
+    string_types,
+    text_type,
+)
 
 class TestZPTTemplateLoader(unittest.TestCase):
     def _makeOne(self, **kw):
@@ -18,7 +22,7 @@ class TestZPTTemplateLoader(unittest.TestCase):
         fixtures = os.path.join(os.path.dirname(__file__), 'fixtures')
         loader = self._makeOne(search_path=[fixtures])
         result = loader.load('test.pt')
-        self.failUnless(result)
+        self.assertTrue(result)
 
     def test_load_with_translate(self):
         import os
@@ -48,7 +52,7 @@ class TestZPTTemplateLoader(unittest.TestCase):
         loader = self._makeOne(search_path=[fixtures])
         self.assertRaises(TemplateError, loader.load, 'doesnt')
         if hasattr(loader, 'notexists'): # pragma: no cover (chameleon 1)
-            self.failUnless(
+            self.assertTrue(
                 os.path.join(fixtures, 'doesnt') in loader.notexists)
 
     def test_load_negative_cache(self):
@@ -59,7 +63,7 @@ class TestZPTTemplateLoader(unittest.TestCase):
         if hasattr(loader, 'notexists'): # pragma: no cover (chameleon 1)
             loader.notexists[path] = True
             result = loader.load('test.pt')
-            self.failUnless(result)
+            self.assertTrue(result)
 
     def test_load_negative_cache2(self):
         import os
@@ -81,7 +85,7 @@ class TestZPTRendererFactory(unittest.TestCase):
         default_dir = resource_filename('deform', 'tests/fixtures/')
         renderer = self._makeOne((default_dir,))
         result = renderer('test')
-        self.assertEqual(result.strip(), u'<div>Test</div>')
+        self.assertEqual(result.strip(), text_type('<div>Test</div>'))
 
     def test_it(self):
         import os
@@ -112,8 +116,8 @@ class Test_default_renderer(unittest.TestCase):
         result = re.sub(' />', '/>', result)
         result = result.strip()
         self.assertEqual(result,
-                         u'<input type="checkbox" name="name" value="true" '
-                         'id="oid"/>')
+                         text_type('<input type="checkbox" name="name" value="true" '
+                         'id="oid"/>'))
 
 class DummyWidget(object):
     name = 'name'

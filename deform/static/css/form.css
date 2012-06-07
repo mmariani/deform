@@ -19,6 +19,15 @@
     padding: 3px;
 }
 
+.deform .tinymce-preload{
+    border: 1px solid #CCC;
+    height: 240px;
+    width: 500px;
+    display: block;
+}
+
+/* deform additions*/
+
 .deformClosebuttonActive {
    border: 0;
    cursor: pointer;
@@ -62,7 +71,7 @@ div.deformReplaces {
     background-color: #FFDFDF;
 }
 
-.deform li.error label.desc, .deform p.error, deform h3.errorMsgLbl{
+.deform li.error label.desc, .deform p.error, .deform h3.errorMsgLbl{
     color: #DF0000;
 }
 

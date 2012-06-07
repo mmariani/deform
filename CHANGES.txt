@@ -4,10 +4,79 @@ Changes
 Next release
 ------------
 
+- Fixed remove bug in nested sequences.  See
+  https://github.com/Pylons/deform/pull/89
+
+0.9.5 (2012-04-27)
+------------------
+
+- Add translations for TinyMCE.  Thanks OCHIAI, Gouji.
+
+- Japanese translation thanks to OCHIAI, Gouji.
+
+- Modified Russian translation thanks to aleksandr.rakov
+
+- Date(Time)Widget supports now options to configure it, thx to gaston
+  tjebbes, kiorky
+
+- FileUploadWidget now sanitizes IE/Windows whole-path filenames before
+  passing them back to the caller during deserialization/validation.
+
+- Add docs and dev setup.py aliases ala Pyramid.
+
+- Add MoneyInputWidget widget type.
+
+- Allow a custom i18n domain to be used for the "Add ${subitem_title}"
+  link of a SequenceWidget.  See
+  https://github.com/Pylons/deform/issues/85 .
+
+- Allow the use of Integer values with SelectWidget.  See
+  https://github.com/Pylons/deform/issues/81 .
+
+- CheckedInputWidget and CheckedPasswordWidget now populate the "confirm"
+  element with the cstruct value (for edit forms).
+
+- Update to JQuery 1.7.2.
+
+- Update to jquery.form 3.09.
+
+0.9.4 (2012-02-14)
+------------------
+
+- No longer Python 2.5 compatible.  Python 2.6+ is required.
+
+- Python 3.2 compatible.
+
 - Translate title attribute for remove button in sequence fields.
 
 - Do not output empty error messages for sequence items. After translation
   these would insert the PO file metadata.
+
+- Update to lingua for translations, add french translation
+
+- fix multiple i18n issues.
+
+- Fix a bug where displaying error could lead on an error when you have
+  imbricated Mapping objects
+
+- Fix issue #54: form.pt does not show validation errors from the top node of
+  the schema. See https://github.com/Pylons/deform/issues/54 for more
+  information.
+
+- Previously, all CheckedInputWidget and CheckedPasswordWidget fields had
+  hardcoded input[name] attributes of 'value' and 'confirm'.  When
+  deserializing a form, this caused colander.null to be passed to the widget
+  deserialization function since neither submitted value matched the name of
+  the field.  This change simply replaces 'value' with the name of the field
+  and 'confirm' with the name of the field with '-confirm' appended.
+
+- In select widget, add css_class to <select> rather than only <option>.
+
+- Allow RichText fields to load their editor only after clicking on them
+
+- There is no longer a ``deform_ajaxify`` global javascript function.
+  Instead forms are AJAXified directly by the javascript callback for the
+  form.
 
 0.9.3 (2011-08-10)
 ------------------
@@ -388,7 +457,7 @@ Bug Fixes
 Features
 ~~~~~~~~
 
-- Add a ``deform.widget.RichTextWidget`` widget, which adds the 
+- Add a ``deform.widget.RichTextWidget`` widget, which adds the
   TinyMCE WYSIWIG javascript editor to a text area.
 
 - Add a ``deform.widget.AutocompleteInputWidget`` widget, which adds
